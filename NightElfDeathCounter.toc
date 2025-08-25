@@ -1,0 +1,8 @@
+## Interface: 110000
+## Title: Night Elf Death Counter
+## Notes: A cute, Night-Elf–inspired death counter with soft moonlit vibes.
+## Author: Candy
+## Version: 1.0.0
+## SavedVariables: NEDC_DB
+
+NightElfDeathCounter.lua
