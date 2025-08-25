@@ -1,208 +1,198 @@
-local ADDON_NAME = ...
-local NEDC = {}
-_G.NEDC = NEDC
+local ADDON = ...
 
--- -----------------------------
--- Saved Vars (defaults)
--- -----------------------------
-local defaults = {
-  count = 0,
-  locked = false,
-  sound = true,
-  scale = 1.0,
-  alpha = 1.0,
-  cuteMessages = true,
-}
+-- ============================================================
+-- Saved Vars
+-- ============================================================
+NightElfDeathsDB = NightElfDeathsDB or {}
+local function Defaults()
+  return {
+    count = 0,
+    shown = true,
+    locked = false,
+    label = "Night Elf Deaths",
+    quote = "Fallen, not forgotten.",
+    point = "CENTER", relPoint = "CENTER", x = 0, y = 0,
+    scale = 1.0,
 
--- Utility: table copy
-local function tblcopy(src)
-  local t = {}
-  for k,v in pairs(src) do t[k] = v end
-  return t
+    width = 512, height = 400,
+
+    -- Layout refinements
+    titleX = 38,   titleY = -106,   -- raise title to align with moon
+    countX = 0,   countY =  0,   -- number stays centered, a touch up
+    quoteX = 0,   quoteY = 120,   -- bring quote up tighter under the 0
+
+    -- Font sizes
+    titleSize = 28,
+    countSize = 120,
+    quoteSize = 22,
+  }
 end
 
--- -----------------------------
--- Create Frame (UI)
--- -----------------------------
-local backdrop = {
-  bgFile = "Interface\\Buttons\\WHITE8x8",
-  edgeFile = "Interface\\Buttons\\WHITE8x8",
-  edgeSize = 1,
-  insets = { left = 1, right = 1, top = 1, bottom = 1 },
-}
+local function Merge(db, def) for k,v in pairs(def) do if db[k]==nil then db[k]=v end end end
 
-local function createUI()
-  local f = CreateFrame("Frame", "NEDC_Frame", UIParent, "BackdropTemplate")
-  f:SetSize(140, 54)
-  f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
-  f:SetBackdrop(backdrop)
-  f:SetBackdropColor(0.09, 0.05, 0.18, 0.7) -- deep night-elf purple bg
-  f:SetBackdropBorderColor(0.6, 0.5, 1.0, 0.8)
+-- ============================================================
+-- Frame (skinned by your TGA)
+-- ============================================================
+local f = CreateFrame("Frame", "NightElfDeathsFrame", UIParent)
+f:SetSize(512, 400)
+f:SetPoint("CENTER")
+f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+f:SetScript("OnDragStart", function(self) if not NightElfDeathsDB.locked then self:StartMoving() end end)
+f:SetScript("OnDragStop", function(self)
+  self:StopMovingOrSizing()
+  local p,_,rp,x,y = self:GetPoint()
+  NightElfDeathsDB.point, NightElfDeathsDB.relPoint, NightElfDeathsDB.x, NightElfDeathsDB.y = p, rp, x, y
+end)
 
-  -- Make it movable
-  f:SetMovable(true)
-  f:EnableMouse(true)
-  f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", function(self)
-    if not NEDC_DB.locked then self:StartMoving() end
-  end)
-  f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+-- Background texture (Interface/AddOns/<AddonFolder>/NEDC.tga)
+local bg = f:CreateTexture(nil, "BACKGROUND")
+bg:SetAllPoints()
+local function ApplyTexture()
+  bg:SetTexture(("Interface\\AddOns\\%s\\NEDC"):format(ADDON)) -- no .tga in code
+  bg:SetTexCoord(0,1,0,1)
+end
+ApplyTexture()
 
-  -- Soft moon glow
-  local glow = f:CreateTexture(nil, "BACKGROUND")
-  glow:SetTexture("Interface\\Cooldown\\star4")
-  glow:SetPoint("CENTER", f, "LEFT", 12, 0)
-  glow:SetSize(56, 56)
-  glow:SetVertexColor(0.85, 0.85, 1.0, 0.45)
+-- ============================================================
+-- Fonts (use game font; no external files)
+-- ============================================================
+local base = select(1, GameFontNormal:GetFont())
+local TitleFont = CreateFont("NED_TitleFont")
+local CountFont = CreateFont("NED_CountFont")
+local QuoteFont = CreateFont("NED_QuoteFont")
 
-  local glowAG = glow:CreateAnimationGroup()
-  local a1 = glowAG:CreateAnimation("Alpha")
-  a1:SetFromAlpha(0.2); a1:SetToAlpha(0.6); a1:SetDuration(1.4)
-  a1:SetOrder(1)
-  local a2 = glowAG:CreateAnimation("Alpha")
-  a2:SetFromAlpha(0.6); a2:SetToAlpha(0.2); a2:SetDuration(1.4)
-  a2:SetOrder(2)
-  glowAG:SetLooping("REPEAT")
-  glowAG:Play()
+local function ApplyFonts()
+  TitleFont:SetFont(base, NightElfDeathsDB.titleSize or 28, "OUTLINE")
+  TitleFont:SetShadowColor(0,0,0,1); TitleFont:SetShadowOffset(1,-1)
 
-  -- Moon icon (Night Elf-ish)
-  local icon = f:CreateTexture(nil, "ARTWORK")
-  icon:SetTexture("Interface\\Icons\\inv_misc_moonstone_01")
-  icon:SetPoint("LEFT", f, "LEFT", 6, 0)
-  icon:SetSize(32, 32)
+  CountFont:SetFont(base, NightElfDeathsDB.countSize or 140, "OUTLINE")
+  CountFont:SetShadowColor(0,0,0,1); CountFont:SetShadowOffset(2,-2)
 
-  -- Title
-  local title = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 6, 6)
-  title:SetTextColor(0.85, 0.9, 1.0, 0.95)
-  title:SetText("Night Elf Deaths")
+  QuoteFont:SetFont(base, NightElfDeathsDB.quoteSize or 22, "")
+  QuoteFont:SetShadowColor(0,0,0,1); QuoteFont:SetShadowOffset(1,-1)
+end
+ApplyFonts()
 
-  -- Big number
-  local num = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
-  num:SetPoint("LEFT", icon, "RIGHT", 8, -2)
-  num:SetTextColor(0.9, 0.8, 1.0, 1.0)
-  num:SetText("0")
-  num:SetJustifyH("LEFT")
+-- ============================================================
+-- Text
+-- ============================================================
+local title = f:CreateFontString(nil, "OVERLAY")
+title:SetFontObject(TitleFont)
+title:SetTextColor(0.96, 0.90, 1.00)
 
-  -- Subtitle (cute)
-  local sub = f:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-  sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-  sub:SetTextColor(0.8, 0.75, 1.0, 0.9)
-  sub:SetText("“Fallen, not forgotten.”")
+local countText = f:CreateFontString(nil, "OVERLAY")
+countText:SetFontObject(CountFont)
+countText:SetTextColor(0.97, 0.92, 1.00)
 
-  -- Cute blink when you die
-  local pulseAG = f:CreateAnimationGroup()
-  local p1 = pulseAG:CreateAnimation("Scale")
-  p1:SetFromScale(1,1); p1:SetToScale(1.08,1.08); p1:SetDuration(0.09); p1:SetOrder(1)
-  local p2 = pulseAG:CreateAnimation("Scale")
-  p2:SetFromScale(1.08,1.08); p2:SetToScale(1,1); p2:SetDuration(0.12); p2:SetOrder(2)
+local quote = f:CreateFontString(nil, "OVERLAY")
+quote:SetFontObject(QuoteFont)
+quote:SetTextColor(0.96, 0.86, 1.00)
 
-  f._num = num
-  f._pulse = pulseAG
-  f._title = title
-  f._subtitle = sub
-  f._icon = icon
-  f._glow = glow
-  return f
+local function LayoutText()
+  title:ClearAllPoints()
+  title:SetPoint("TOP",   NightElfDeathsDB.titleX or 72,   NightElfDeathsDB.titleY or -112)
+
+  countText:ClearAllPoints()
+  countText:SetPoint("CENTER", NightElfDeathsDB.countX or 28, NightElfDeathsDB.countY or -6)
+
+  quote:ClearAllPoints()
+  quote:SetPoint("BOTTOM", NightElfDeathsDB.quoteX or 28, NightElfDeathsDB.quoteY or 68)
 end
 
--- -----------------------------
--- Core
--- -----------------------------
-local frame = createUI()
+-- Tooltip hint
+f:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP")
+  GameTooltip:AddLine("/ned for options", 1,1,1)
+  GameTooltip:Show()
+end)
+f:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-local function updateNumber()
-  frame._num:SetText(NEDC_DB.count or 0)
+local function Refresh()
+  title:SetText(NightElfDeathsDB.label)
+  countText:SetText(tostring(NightElfDeathsDB.count))
+  quote:SetText(("\"%s\""):format(NightElfDeathsDB.quote))
+
+  f:ClearAllPoints()
+  f:SetPoint(NightElfDeathsDB.point, UIParent, NightElfDeathsDB.relPoint, NightElfDeathsDB.x, NightElfDeathsDB.y)
+  f:SetScale(NightElfDeathsDB.scale or 1)
+  f:SetSize(NightElfDeathsDB.width or 512, NightElfDeathsDB.height or 400)
+
+  ApplyFonts()
+  LayoutText()
+  if NightElfDeathsDB.shown then f:Show() else f:Hide() end
 end
 
-local cuteLines = {
-  "Another spirit run? I like a girl who’s persistent. 💜",
-  "You fall with such grace. 10/10 swan dive.",
-  "Elune forgives. Your repair bill won’t. 😘",
-  "Death becomes you… but maybe try less of it?",
-  "One step closer to immortality speedrun.",
-}
-
-local function saySomethingCute()
-  if not NEDC_DB.cuteMessages then return end
-  local i = math.random(#cuteLines)
-  print("|cffbfaaffNEDC:|r "..cuteLines[i])
-end
-
-local function celebrate()
-  frame._pulse:Stop()
-  frame._pulse:Play()
-  if NEDC_DB.sound then
-    -- Soft UI sound that won't blow ears off
-    if PlaySound then
-      PlaySound(SOUNDKIT.UI_LOOT_TOAST_SHOW or 515, "SFX")
-    end
-  end
-end
-
--- Slash commands
-SLASH_NEDC1 = "/nedc"
-SlashCmdList["NEDC"] = function(msg)
-  msg = string.lower(msg or "")
-  if msg == "reset" then
-    NEDC_DB.count = 0
-    updateNumber()
-    print("|cffbfaaffNEDC:|r counter reset. Fresh as moonlight.")
-  elseif msg == "lock" then
-    NEDC_DB.locked = true
-    print("|cffbfaaffNEDC:|r frame locked.")
-  elseif msg == "unlock" then
-    NEDC_DB.locked = false
-    print("|cffbfaaffNEDC:|r frame unlocked. Drag me, darling.")
-  elseif msg == "hide" then
-    frame:Hide()
-    print("|cffbfaaffNEDC:|r hidden. Use |cffffff00/nedc show|r to bring me back.")
-  elseif msg == "show" then
-    frame:Show()
-  elseif msg:match("^scale%s+[%d%.]+$") then
-    local s = tonumber(msg:match("scale%s+([%d%.]+)"))
-    if s and s >= 0.6 and s <= 2.0 then
-      NEDC_DB.scale = s
-      frame:SetScale(s)
-      print("|cffbfaaffNEDC:|r scale set to "..s)
-    else
-      print("|cffbfaaffNEDC:|r scale must be between 0.6 and 2.0")
-    end
-  elseif msg == "sound on" then
-    NEDC_DB.sound = true; print("|cffbfaaffNEDC:|r sound enabled.")
-  elseif msg == "sound off" then
-    NEDC_DB.sound = false; print("|cffbfaaffNEDC:|r sound disabled.")
-  elseif msg == "cute on" then
-    NEDC_DB.cuteMessages = true; print("|cffbfaaffNEDC:|r cute messages enabled.")
-  elseif msg == "cute off" then
-    NEDC_DB.cuteMessages = false; print("|cffbfaaffNEDC:|r cute messages disabled.")
-  else
-    print("|cffbfaaffNEDC usage:|r /nedc reset | lock | unlock | show | hide | sound on/off | cute on/off | scale <0.6-2.0>")
-  end
-end
-
+-- ============================================================
 -- Events
-local events = CreateFrame("Frame")
-events:RegisterEvent("ADDON_LOADED")
-events:RegisterEvent("PLAYER_DEAD")
-
-events:SetScript("OnEvent", function(_, event, arg1)
-  if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-    if type(NEDC_DB) ~= "table" then
-      NEDC_DB = tblcopy(defaults)
-    else
-      -- ensure defaults exist if new version adds keys
-      for k,v in pairs(defaults) do
-        if NEDC_DB[k] == nil then NEDC_DB[k] = v end
-      end
+-- ============================================================
+local e = CreateFrame("Frame")
+e:RegisterEvent("ADDON_LOADED")
+e:RegisterEvent("PLAYER_DEAD")
+e:SetScript("OnEvent", function(_, ev, arg1)
+  if ev == "ADDON_LOADED" and arg1 == ADDON then
+    Merge(NightElfDeathsDB, Defaults())
+    Refresh()
+  elseif ev == "PLAYER_DEAD" then
+    local race = select(2, UnitRace("player"))
+    if race == "NightElf" then
+      NightElfDeathsDB.count = (NightElfDeathsDB.count or 0) + 1
+      Refresh()
     end
-    frame:SetScale(NEDC_DB.scale or 1.0)
-    frame:SetAlpha(NEDC_DB.alpha or 1.0)
-    updateNumber()
-  elseif event == "PLAYER_DEAD" then
-    NEDC_DB.count = (NEDC_DB.count or 0) + 1
-    updateNumber()
-    celebrate()
-    saySomethingCute()
   end
 end)
+
+-- ============================================================
+-- Slash Commands (keep fine-tuning without editing files)
+-- ============================================================
+SLASH_NIGHTELFDEATHS1 = "/ned"
+SlashCmdList["NIGHTELFDEATHS"] = function(msg)
+  msg = (msg and msg:lower() or ""):gsub("^%s+","")
+
+  if msg == "show" then NightElfDeathsDB.shown = true; Refresh()
+  elseif msg == "hide" then NightElfDeathsDB.shown = false; Refresh()
+  elseif msg == "lock" then NightElfDeathsDB.locked = true; print("|cffcba0ffNED|r locked.")
+  elseif msg == "unlock" then NightElfDeathsDB.locked = false; print("|cffcba0ffNED|r unlocked (drag to move).")
+  elseif msg == "reset" then NightElfDeathsDB.count = 0; Refresh()
+  elseif msg:match("^set%s+%d+$") then NightElfDeathsDB.count = tonumber(msg:match("%d+")) or 0; Refresh()
+  elseif msg:match("^label%s+.+") then NightElfDeathsDB.label = msg:match("^label%s+(.+)"); Refresh()
+  elseif msg:match("^quote%s+.+") then NightElfDeathsDB.quote = msg:match("^quote%s+(.+)"); Refresh()
+  elseif msg:match("^scale%s+[%d%.]+$") then
+    local s = tonumber(msg:match("([%d%.]+)")) or 1
+    NightElfDeathsDB.scale = math.max(0.5, math.min(2.0, s)); Refresh()
+  elseif msg:match("^size%s+%d+x%d+$") then
+    local w,h = msg:match("^size%s+(%d+)x(%d+)$")
+    NightElfDeathsDB.width, NightElfDeathsDB.height = tonumber(w), tonumber(h); Refresh()
+    print(string.format("|cffcba0ffNED|r size %sx%s.", w, h))
+
+  -- /ned pos <title|count|quote> <x> <y>
+  elseif msg:match("^pos%s+(title|count|quote)%s+[-%d]+%s+[-%d]+$") then
+    local which, x, y = msg:match("^pos%s+(title|count|quote)%s+([-%d]+)%s+([-%d]+)$")
+    x, y = tonumber(x), tonumber(y)
+    if which == "title" then NightElfDeathsDB.titleX, NightElfDeathsDB.titleY = x, y
+    elseif which == "count" then NightElfDeathsDB.countX, NightElfDeathsDB.countY = x, y
+    elseif which == "quote" then NightElfDeathsDB.quoteX, NightElfDeathsDB.quoteY = x, y end
+    Refresh()
+    print(string.format("|cffcba0ffNED|r %s pos x=%d, y=%d", which, x, y))
+
+  -- /ned font <title|count|quote> <size>
+  elseif msg:match("^font%s+(title|count|quote)%s+%d+$") then
+    local which, sz = msg:match("^font%s+(title|count|quote)%s+(%d+)$")
+    sz = tonumber(sz)
+    if which == "title" then NightElfDeathsDB.titleSize = sz
+    elseif which == "count" then NightElfDeathsDB.countSize = sz
+    elseif which == "quote" then NightElfDeathsDB.quoteSize = sz end
+    ApplyFonts(); LayoutText()
+    print(string.format("|cffcba0ffNED|r %s font %d", which, sz))
+
+  elseif msg == "tex" then
+    ApplyTexture(); print("|cffcba0ffNED|r texture reapplied. (New files require one full client restart.)")
+
+  else
+    print("|cffcba0ffNight Elf Deaths|r commands:")
+    print("  /ned show|hide|lock|unlock|reset|set N")
+    print("  /ned label <text>   /ned quote <text>")
+    print("  /ned scale <0.5–2.0>   /ned size <W>x<H>")
+    print("  /ned pos <title|count|quote> <x> <y>")
+    print("  /ned font <title|count|quote> <size>   /ned tex")
+  end
+end
